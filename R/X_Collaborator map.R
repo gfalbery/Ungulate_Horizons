@@ -3,6 +3,8 @@
 
 rm(list = ls())
 
+source("R/X_Label ordering.R")
+
 library(tidyverse)
 library(gsheet)
 library(sf)
@@ -145,7 +147,8 @@ if(!file.exists("Data/Systems.csv")){
   
 }
 
-MapDf %<>% filter(!(is.na(Lat)|is.na(System)))
+MapDf %<>% filter(!(is.na(Lat)|is.na(System))) %>% 
+  filter(!is.na(Species))
 
 # World basemap -----------------------------------------------------------
 
@@ -203,8 +206,8 @@ LabelXSeq =
     length.out = nrow(MapDf)
   )
 
-TopLabelY = YRange[2] + YPad * 0.55
-BottomLabelY = YRange[1] - YPad * 0.55
+TopLabelY = YRange[2] + YPad * 0.25
+BottomLabelY = YRange[1] - YPad * 0.25
 
 TopAnchorY = YRange[2] + YPad * 0.15
 BottomAnchorY = YRange[1] - YPad * 0.15
@@ -243,15 +246,16 @@ World =
   ne_countries(scale = "medium", returnclass = "sf")
 
 XLimits = c(XRange[1] - XPad, XRange[2] + XPad)
-YLimits = c(YRange[1] - YPad, YRange[2] + YPad)
+YCrop = c(YRange[1] - YPad, YRange[2] + YPad)
+YLimits = c(YRange[1] - YPad*2, YRange[2] + YPad*2)
 
 WorldCrop =
   st_crop(
     World,
     xmin = XLimits[1],
     xmax = XLimits[2],
-    ymin = YLimits[1],
-    ymax = YLimits[2]
+    ymin = YCrop[1],
+    ymax = YCrop[2]
   )
 
 # PhyloPic lookup helpers ####
@@ -306,8 +310,9 @@ NthLookup = c(
 
 names(NthLookup) <- PhyloTaxonLookup
 
-MapDf =
+MapDf <-
   MapDf %>%
+  dplyr::select(Species) %>% unique %>% 
   mutate(
     PhyloTaxon = unname(PhyloTaxonLookup[Species]),
     Uuid = map2_chr(
@@ -333,54 +338,112 @@ MapDf =
       Species == "Ursus arctos" ~ diff(XLimits) * 0.022,
       TRUE ~ diff(XLimits) * 0.020
     )
-  )
+  ) %>% 
+  left_join(MapDf, ., by = "Species")
 
 MapDf$Uuid
 
-# Base map ####
+# Trying a new label order ####
 
-P <-
-  ggplot(LongSummaryTable, 
-         aes(x = Lon, y = Lat)) +
-  geom_sf(
-    data = World,
-    inherit.aes = FALSE,
-    fill = "grey85",
-    colour = "grey70",
-    linewidth = 0.25
-  ) +
-  geom_path(
-    data = LongSummaryTable,
-    aes(x = X, y = Y, group = DisplayLabel),
-    colour = "grey45",
-    linewidth = 0.25,
-    lineend = "round"
-  ) +
-  geom_text(
-    data = MapDf,
-    aes(
-      x = LongSec,
-      y = LabelY,
-      label = DisplayLabel,
-      hjust = HJust
-    ),
-    size = 3.2,
-    angle = 90,
-    lineheight = 0.9
-  ) +
-  coord_sf(
-    xlim = XLimits,
-    ylim = YLimits,
-    expand = FALSE
-  ) +
-  labs(x = NULL, y = NULL) +
-  theme_void() +
-  theme(
-    legend.position = "none",
-    plot.margin = margin(10, 10, 10, 10)
+PointsDf =
+  MapDf %>%
+  transmute(
+    Id = DisplayLabel,
+    Lon = Lon,
+    Lat = Lat
   )
 
-P
+Fit =
+  OptimiseLabelSides(
+    PointsDf = PointsDf,
+    MaxIter = 100,
+    CrossingWeight = 10000,
+    LengthWeight = 1,
+    ImbalanceWeight = 200,
+    Verbose = TRUE
+  )
+
+Fit$ScoreDf
+LabelDf = Fit$LayoutDf
+
+# Base map ####
+# X_Collaborator map.R ####
+
+# Label layout join ####
+
+LabelDf =
+  Fit$LayoutDf %>%
+  left_join(
+    MapDf %>%
+      dplyr::select(DisplayLabel, Species, Uuid, IconWidth),
+    by = c("Id" = "DisplayLabel")
+  ) %>%
+  mutate(
+    HJust = ifelse(Side == "top", 0, 1)
+  )
+
+# Connector data ####
+
+LongSummaryTable =
+  bind_rows(
+    LabelDf %>%
+      transmute(
+        DisplayLabel = Id,
+        X = Lon,
+        Y = Lat,
+        Order = 1
+      ),
+    LabelDf %>%
+      transmute(
+        DisplayLabel = Id,
+        X = LabelX,
+        Y = LabelY,
+        Order = 2
+      )
+  ) %>%
+  arrange(DisplayLabel, Order)
+
+# Base map ####
+
+(P <-
+   ggplot() +
+   geom_sf(
+     data = World,
+     inherit.aes = FALSE,
+     fill = "grey85",
+     colour = "grey70",
+     linewidth = 0.25
+   ) +
+   geom_path(
+     data = LongSummaryTable,
+     aes(x = X, y = Y, group = DisplayLabel),
+     colour = "grey45",
+     linewidth = 0.25,
+     lineend = "round"
+   ) +
+   geom_text(
+     data = LabelDf,
+     aes(
+       x = LabelX,
+       y = LabelY,
+       label = Id,
+       hjust = HJust
+     ),
+     size = 3.2,
+     angle = 45,
+     lineheight = 0.9
+   ) +
+   coord_sf(
+     xlim = XLimits,
+     ylim = YLimits,
+     expand = FALSE
+   ) +
+   labs(x = NULL, y = NULL) +
+   theme_void() +
+   theme(
+     legend.position = "none",
+     plot.margin = margin(10, 10, 10, 10)
+   ))
 
 # Add PhyloPics in place of points ####
 
@@ -419,7 +482,7 @@ for(I in seq_len(nrow(MapDf))) {
 print(P)
 
 ggsave(
-  filename = "Figures/CollaboratorMap_PhyloPic.png",
+  filename = "Figures/CollaboratorMap_PhyloPic2.png",
   plot = P,
   width = 300,
   height = 220,
