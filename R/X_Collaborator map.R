@@ -1,5 +1,7 @@
 
-# X_Collaborator map ---------------------------------------------------------
+# X_Collaborator map ####
+
+rm(list = ls())
 
 library(tidyverse)
 library(gsheet)
@@ -9,11 +11,15 @@ library(ggrepel)
 library(cowplot)
 library(colorspace)
 library(ggregplot)
+library(magrittr)
+library(fs)
 
 theme_set(
   theme_cowplot() +
     theme(strip.background = element_rect(fill = "white"))
 )
+
+dir_create("Figures")
 
 if(!file.exists("Data/Systems.csv")){
   
@@ -93,12 +99,13 @@ if(!file.exists("Data/Systems.csv")){
       Source = "Euromammals",
       Lon = Longitude,
       Lat = Latitude
-    )
+    ) %>% 
+    mutate_at("Site", ~paste0("EM: ", .x))
   
-  # Standardise your Google Sheet data --------------------------------------
+  # Standardise Google Sheet data --------------------------------------
   
   # This tries to preserve your existing columns and only adds missing ones.
-  # Adjust the fallbacks if your sheet uses different names.
+  # Adjust the fallbacks if the sheet uses different names.
   BaseDfStd <-
     BaseDf %>%
     mutate(
@@ -137,6 +144,8 @@ if(!file.exists("Data/Systems.csv")){
   MapDf <- read.csv("Data/Systems.csv")
   
 }
+
+MapDf %<>% filter(!(is.na(Lat)|is.na(System)))
 
 # World basemap -----------------------------------------------------------
 
@@ -179,13 +188,13 @@ MapDf =
     Side = rep(c("top", "bottom"), length.out = n())
   )
 
-AllExtentDF <- ExtentGet(MapDfOrdered, "Lon", "Lat")
+AllExtentDF <- ExtentGet(MapDf, "Lon", "Lat")
 
 XRange = range(MapDfOrdered$Lon, na.rm = TRUE)
 YRange = range(MapDfOrdered$Lat, na.rm = TRUE)
 
-XPad = diff(XRange) * 0.12
-YPad = diff(YRange) * 0.18
+XPad = diff(XRange) * 0.1
+YPad = diff(YRange) * 0.2
 
 LabelXSeq =
   seq(
@@ -245,8 +254,7 @@ WorldCrop =
     ymax = YLimits[2]
   )
 
-# 8. PhyloPic lookup helpers ####
-#    Mirrors the approach in your uploaded file.
+# PhyloPic lookup helpers ####
 
 GetUuid = function(TaxonName, Nth = 1) {
   Uuid =
@@ -275,10 +283,14 @@ PhyloTaxonLookup = c(
   "Lynx lynx" = "Lynx",
   "Rangifer tarandus" = "Rangifer",
   "Sus scrofa" = "Sus",
+  "Ovis aries" = "Ovis",
+  "Dama dama" = "Dama",
   "Ursus arctos" = "Ursidae"
 )
 
-# Some searches return multiple silhouettes; this lets you choose one.
+PhyloTaxonLookup <- names(PhyloTaxonLookup)
+names(PhyloTaxonLookup) <- PhyloTaxonLookup
+
 NthLookup = c(
   "Alces" = 1,
   "Capreolus" = 1,
@@ -287,41 +299,47 @@ NthLookup = c(
   "Lynx" = 1,
   "Rangifer" = 1,
   "Sus" = 1,
+  "Ovis" = 1,
+  "Dama" = 1,
   "Ursidae" = 1
 )
 
-# MapDf =
-#   MapDf %>%
-#   mutate(
-#     PhyloTaxon = unname(PhyloTaxonLookup[Species]),
-#     Uuid = map2_chr(
-#       PhyloTaxon,
-#       PhyloTaxon,
-#       ~{
-#         if(is.na(.x)) {
-#           return(NA_character_)
-#         }
-#         GetUuid(.x, Nth = NthLookup[[.y]])
-#       }
-#     ),
-#     IconWidth = case_when(
-#       Species == "Capreolus capreolus" ~ diff(XLimits) * 0.018,
-#       Species == "Cervus elaphus" ~ diff(XLimits) * 0.022,
-#       Species == "Alces alces" ~ diff(XLimits) * 0.025,
-#       Species == "Rangifer tarandus" ~ diff(XLimits) * 0.022,
-#       Species == "Sus scrofa" ~ diff(XLimits) * 0.020,
-#       Species == "Equus ferus caballus" ~ diff(XLimits) * 0.022,
-#       Species == "Lynx lynx" ~ diff(XLimits) * 0.018,
-#       Species == "Ursus arctos" ~ diff(XLimits) * 0.022,
-#       TRUE ~ diff(XLimits) * 0.020
-#     )
-#   )
+names(NthLookup) <- PhyloTaxonLookup
 
-# 9. Base map ####
+MapDf =
+  MapDf %>%
+  mutate(
+    PhyloTaxon = unname(PhyloTaxonLookup[Species]),
+    Uuid = map2_chr(
+      PhyloTaxon,
+      PhyloTaxon,
+      ~{
+        if(is.na(.x)) {
+          return(NA_character_)
+        }
+        GetUuid(.x, Nth = NthLookup[[.y]])
+      }
+    ),
+    IconWidth = case_when(
+      Species == "Capreolus capreolus" ~ diff(XLimits) * 0.018,
+      Species == "Dama dama" ~ diff(XLimits) * 0.022,
+      Species == "Ovis aries" ~ diff(XLimits) * 0.022,
+      Species == "Cervus elaphus" ~ diff(XLimits) * 0.022,
+      Species == "Alces alces" ~ diff(XLimits) * 0.025,
+      Species == "Rangifer tarandus" ~ diff(XLimits) * 0.022,
+      Species == "Sus scrofa" ~ diff(XLimits) * 0.020,
+      Species == "Equus ferus caballus" ~ diff(XLimits) * 0.022,
+      Species == "Lynx lynx" ~ diff(XLimits) * 0.018,
+      Species == "Ursus arctos" ~ diff(XLimits) * 0.022,
+      TRUE ~ diff(XLimits) * 0.020
+    )
+  )
 
-library(sf)
+MapDf$Uuid
 
-# P =
+# Base map ####
+
+P <-
   ggplot(LongSummaryTable, 
          aes(x = Lon, y = Lat)) +
   geom_sf(
@@ -362,10 +380,14 @@ library(sf)
     plot.margin = margin(10, 10, 10, 10)
   )
 
-# 10. Add PhyloPics in place of points ####
-#     Same logic as your uploaded script: loop over rows and add one by one.
+P
+
+# Add PhyloPics in place of points ####
 
 for(I in seq_len(nrow(MapDf))) {
+  
+  print(I)
+  
   if(!is.na(MapDf$Uuid[I])) {
     P =
       P +
