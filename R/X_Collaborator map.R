@@ -429,6 +429,24 @@ LongSummaryTable =
   ) %>%
   arrange(DisplayLabel, Order)
 
+# Label mask rectangles ####
+
+TopMaskDf <-
+  tibble(
+    xmin = XLimits[1],
+    xmax = XLimits[2],
+    ymin = min(LabelDf$LabelY[LabelDf$Side == "top"], na.rm = TRUE) - diff(YLimits) * 0.015,
+    ymax = max(LabelDf$LabelY[LabelDf$Side == "top"] + LabelDf$YOffset[LabelDf$Side == "top"], na.rm = TRUE) + diff(YLimits) * 0.03
+  )
+
+BottomMaskDf <-
+  tibble(
+    xmin = XLimits[1],
+    xmax = XLimits[2],
+    ymin = min(LabelDf$LabelY[LabelDf$Side == "bottom"] + LabelDf$YOffset[LabelDf$Side == "bottom"], na.rm = TRUE) - diff(YLimits) * 0.03,
+    ymax = max(LabelDf$LabelY[LabelDf$Side == "bottom"], na.rm = TRUE) + diff(YLimits) * 0.015
+  )
+
 # Base map ####
 
 (P <-
@@ -439,6 +457,20 @@ LongSummaryTable =
      fill = "grey85",
      colour = "grey70",
      linewidth = 0.25
+   ) +
+   geom_rect(
+     data = TopMaskDf,
+     aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax),
+     inherit.aes = FALSE,
+     fill = "white",
+     colour = NA
+   ) +
+   geom_rect(
+     data = BottomMaskDf,
+     aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax),
+     inherit.aes = FALSE,
+     fill = "white",
+     colour = NA
    ) +
    geom_path(
      data = LongSummaryTable,
@@ -605,14 +637,14 @@ for(I in seq_len(nrow(MapDf))) {
 
 P
 
-ggsave(
-  filename = "Figures/CollaboratorMap_PhyloPic.png",
-  plot = P,
-  width = 300,
-  height = 220,
-  units = "mm",
-  dpi = 600
-)
+# ggsave(
+#   filename = "Figures/CollaboratorMap_PhyloPic.png",
+#   plot = P,
+#   width = 300,
+#   height = 220,
+#   units = "mm",
+#   dpi = 600
+# )
 
 ggsave(
   filename = "Figures/CollaboratorMap_PhyloPic.jpeg",
