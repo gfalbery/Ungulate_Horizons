@@ -382,6 +382,12 @@ LabelDf =
     HJust = ifelse(Side == "top", 0, 1)
   )
 
+LabelDf %<>%
+  mutate(
+    XOffset = ifelse(Side == "top", 1, -1) * diff(XLimits) * 0.02,
+    YOffset = diff(YLimits) * 0.01
+  )
+
 # Connector data ####
 
 LongSummaryTable =
@@ -414,6 +420,9 @@ LongSummaryTable =
      colour = "grey70",
      linewidth = 0.25
    ) +
+   geom_point(data = MapDf,
+              aes(x = X, y = Y, colour = Species)) +
+   scale_color_brewer(palette = "Spectral") +
    geom_path(
      data = LongSummaryTable,
      aes(x = X, y = Y, group = DisplayLabel),
@@ -424,8 +433,8 @@ LongSummaryTable =
    geom_text(
      data = LabelDf,
      aes(
-       x = LabelX,
-       y = LabelY,
+       x = LabelX + XOffset,
+       y = LabelY + YOffset,
        label = Id,
        hjust = HJust
      ),
@@ -483,6 +492,15 @@ print(P)
 
 ggsave(
   filename = "Figures/CollaboratorMap_PhyloPic2.png",
+  plot = P,
+  width = 300,
+  height = 220,
+  units = "mm",
+  dpi = 600
+)
+
+ggsave(
+  filename = "Figures/CollaboratorMap_PhyloPic2.jpeg",
   plot = P,
   width = 300,
   height = 220,
