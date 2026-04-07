@@ -1,7 +1,7 @@
 
 # X_Collaborator map ####
 
-rm(list = ls())
+# rm(list = ls())
 
 source("R/X_Label ordering.R")
 
@@ -148,7 +148,8 @@ if(!file.exists("Data/Systems.csv")){
 }
 
 MapDf %<>% filter(!(is.na(Lat)|is.na(System))) %>% 
-  filter(!is.na(Species))
+  filter(!is.na(Species)) %>% 
+  filter(!Species %in% c("Ursus arctos", "Lynx lynx"))
 
 # Species colours ####
 
@@ -299,6 +300,7 @@ GetUuid = function(TaxonName, Nth = 1) {
 
 # Use robust higher taxa where species lookups are unreliable.
 # Adjust any of these if you prefer a different silhouette.
+
 PhyloTaxonLookup = c(
   "Alces alces" = "Alces",
   "Capreolus capreolus" = "Capreolus",
@@ -427,7 +429,6 @@ LongSummaryTable =
   ) %>%
   arrange(DisplayLabel, Order)
 
-
 # Base map ####
 
 (P <-
@@ -483,15 +484,36 @@ LegendDf <-
 
 # Legend position ####
 
-LegendX <- XLimits[2] - diff(XLimits) * 0.12
-LegendYStart <- YLimits[1] + diff(YLimits) * 0.25
-LegendSpacing <- diff(YLimits) * 0.045
+LegendX <- XLimits[1] + diff(XLimits) * 0.04
+LegendYStart <- YLimits[2] - diff(YLimits) * 0.3
+LegendSpacing <- diff(YLimits) * 0.03
 
 LegendDf <-
   LegendDf %>%
   mutate(
     X = LegendX,
-    Y = LegendYStart + (n() - Row) * LegendSpacing
+    Y = LegendYStart - (Row - 1) * LegendSpacing
+  )
+
+# Legend bounding box ####
+
+LegendBox <-
+  tibble(
+    xmin = LegendX - diff(XLimits) * 0.015,
+    xmax = LegendX + diff(XLimits) * 0.18,
+    ymin = min(LegendDf$Y) - LegendSpacing * 0.6,
+    ymax = max(LegendDf$Y) + LegendSpacing * 0.6
+  )
+
+P <-
+  P +
+  geom_rect(
+    data = LegendBox,
+    aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax),
+    inherit.aes = FALSE,
+    fill = "white",
+    colour = "grey40",
+    linewidth = 0.3
   )
 
 # Add legend phylopics ####
@@ -507,7 +529,7 @@ for(I in seq_len(nrow(LegendDf))) {
         x = LegendDf$X[I],
         y = LegendDf$Y[I],
         width = LegendDf$IconWidth[I] * 0.8,
-        color = LegendDf$Colour[I],
+        # color = LegendDf$Colour[I],
         fill = LegendDf$Colour[I],
         alpha = 1
       )
@@ -543,6 +565,8 @@ P <-
     size = 3
   )
 
+P
+
 # Add PhyloPics in place of points ####
 
 for(I in seq_len(nrow(MapDf))) {
@@ -559,7 +583,7 @@ for(I in seq_len(nrow(MapDf))) {
         width = MapDf$IconWidth[I],
         # color = "black",
         # fill = "black",
-        color = MapDf$Colour[I],
+        # color = MapDf$Colour[I],
         fill = MapDf$Colour[I],
         alpha = 1
       )
