@@ -150,6 +150,24 @@ if(!file.exists("Data/Systems.csv")){
 MapDf %<>% filter(!(is.na(Lat)|is.na(System))) %>% 
   filter(!is.na(Species))
 
+# Species colours ####
+
+SpeciesLevels <- 
+  MapDf %>% 
+  pull(Species) %>% 
+  unique() %>% 
+  sort()
+
+SpeciesPalette <- 
+  colorRampPalette(RColorBrewer::brewer.pal(11, "Spectral"))(length(SpeciesLevels)) %>% 
+  setNames(SpeciesLevels)
+
+MapDf <- 
+  MapDf %>% 
+  mutate(
+    Colour = SpeciesPalette[Species]
+  )
+
 # World basemap -----------------------------------------------------------
 
 World <-
@@ -245,15 +263,17 @@ LongSummaryTable =
 World =
   ne_countries(scale = "medium", returnclass = "sf")
 
-XLimits = c(XRange[1] - XPad, XRange[2] + XPad)
-YCrop = c(YRange[1] - YPad, YRange[2] + YPad)
+XLimits = c(XRange[1] - XPad*2, XRange[2] + XPad*2)
+XCrop = c(XRange[1] - XPad, XRange[2] + XPad)
+
 YLimits = c(YRange[1] - YPad*2, YRange[2] + YPad*2)
+YCrop = c(YRange[1] - YPad, YRange[2] + YPad)
 
 WorldCrop =
   st_crop(
     World,
-    xmin = XLimits[1],
-    xmax = XLimits[2],
+    xmin = XCrop[1],
+    xmax = XCrop[2],
     ymin = YCrop[1],
     ymax = YCrop[2]
   )
@@ -366,9 +386,6 @@ Fit =
 Fit$ScoreDf
 LabelDf = Fit$LayoutDf
 
-# Base map ####
-# X_Collaborator map.R ####
-
 # Label layout join ####
 
 LabelDf =
@@ -384,9 +401,10 @@ LabelDf =
 
 LabelDf %<>%
   mutate(
-    XOffset = ifelse(Side == "top", 1, -1) * diff(XLimits) * 0.02,
+    # XOffset = ifelse(Side == "top", 1, -1) * diff(XLimits) * 0.02,
     YOffset = diff(YLimits) * 0.01
-  )
+  ) %>% 
+  mutate_at("YOffset", ~ifelse(Side == "top", .x, -.x))
 
 # Connector data ####
 
@@ -409,6 +427,7 @@ LongSummaryTable =
   ) %>%
   arrange(DisplayLabel, Order)
 
+
 # Base map ####
 
 (P <-
@@ -420,9 +439,6 @@ LongSummaryTable =
      colour = "grey70",
      linewidth = 0.25
    ) +
-   geom_point(data = MapDf,
-              aes(x = X, y = Y, colour = Species)) +
-   scale_color_brewer(palette = "Spectral") +
    geom_path(
      data = LongSummaryTable,
      aes(x = X, y = Y, group = DisplayLabel),
@@ -433,7 +449,7 @@ LongSummaryTable =
    geom_text(
      data = LabelDf,
      aes(
-       x = LabelX + XOffset,
+       x = LabelX,
        y = LabelY + YOffset,
        label = Id,
        hjust = HJust
@@ -454,6 +470,79 @@ LongSummaryTable =
      plot.margin = margin(10, 10, 10, 10)
    ))
 
+# Legend data ####
+
+LegendDf <-
+  MapDf %>%
+  dplyr::select(Species, Colour, Uuid, IconWidth) %>%
+  distinct() %>%
+  arrange(Species) %>%
+  mutate(
+    Row = row_number()
+  )
+
+# Legend position ####
+
+LegendX <- XLimits[2] - diff(XLimits) * 0.12
+LegendYStart <- YLimits[1] + diff(YLimits) * 0.25
+LegendSpacing <- diff(YLimits) * 0.045
+
+LegendDf <-
+  LegendDf %>%
+  mutate(
+    X = LegendX,
+    Y = LegendYStart + (n() - Row) * LegendSpacing
+  )
+
+# Add legend phylopics ####
+
+for(I in seq_len(nrow(LegendDf))) {
+  
+  if(!is.na(LegendDf$Uuid[I])) {
+    
+    P <-
+      P +
+      rphylopic::add_phylopic(
+        uuid = LegendDf$Uuid[I],
+        x = LegendDf$X[I],
+        y = LegendDf$Y[I],
+        width = LegendDf$IconWidth[I] * 0.8,
+        color = LegendDf$Colour[I],
+        fill = LegendDf$Colour[I],
+        alpha = 1
+      )
+    
+  } else {
+    
+    P <-
+      P +
+      geom_point(
+        data = LegendDf[I, , drop = FALSE],
+        aes(x = X, y = Y),
+        inherit.aes = FALSE,
+        shape = 21,
+        size = 2,
+        fill = LegendDf$Colour[I],
+        colour = "white"
+      )
+  }
+}
+
+# Add legend labels ####
+
+P <-
+  P +
+  geom_text(
+    data = LegendDf,
+    aes(
+      x = X + diff(XLimits) * 0.02,
+      y = Y,
+      label = Species
+    ),
+    hjust = 0,
+    size = 3
+  )
+
 # Add PhyloPics in place of points ####
 
 for(I in seq_len(nrow(MapDf))) {
@@ -468,8 +557,10 @@ for(I in seq_len(nrow(MapDf))) {
         x = MapDf$Lon[I],
         y = MapDf$Lat[I],
         width = MapDf$IconWidth[I],
-        color = "black",
-        fill = "black",
+        # color = "black",
+        # fill = "black",
+        color = MapDf$Colour[I],
+        fill = MapDf$Colour[I],
         alpha = 1
       )
   } else {
@@ -488,10 +579,10 @@ for(I in seq_len(nrow(MapDf))) {
   }
 }
 
-print(P)
+P
 
 ggsave(
-  filename = "Figures/CollaboratorMap_PhyloPic2.png",
+  filename = "Figures/CollaboratorMap_PhyloPic.png",
   plot = P,
   width = 300,
   height = 220,
@@ -500,7 +591,7 @@ ggsave(
 )
 
 ggsave(
-  filename = "Figures/CollaboratorMap_PhyloPic2.jpeg",
+  filename = "Figures/CollaboratorMap_PhyloPic.jpeg",
   plot = P,
   width = 300,
   height = 220,
